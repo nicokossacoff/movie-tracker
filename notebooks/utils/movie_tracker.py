@@ -30,7 +30,7 @@ class Database:
         if self.conn:
             self.conn.close()
 
-    def create_table(self, query: str):
+    def create_table(self, table_name: str):
         '''
         Creates a table in the database.
 
@@ -40,12 +40,19 @@ class Database:
         try:
             print('Creating table...')
 
-            # Checks if the query starts with 'CREATE TABLE IF NOT EXISTS'
-            if not query.startswith('CREATE TABLE IF NOT EXISTS'):
-                raise ValueError("Query must start with 'CREATE TABLE IF NOT EXISTS'")
-            else:
-                # Executes the query
-                self.cursor.execute(query)
+            # SQL query to create the table
+            query = f'''
+                CREATE TABLE IF NOT EXISTS {table_name} (
+                    reference_id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title                       TEXT NOT NULL,
+                    director                    TEXT,
+                    release_date                DATE,
+                    genre                       TEXT,
+                    rating                      REAL,
+                    watched_date                DATE
+                );
+            '''
+            self.cursor.execute(query)
 
             # Commits the changes to the database
             self.conn.commit()
@@ -54,7 +61,31 @@ class Database:
         except sqlite3.Error as e:
             print(f"An error occured while creating the table: {e}")
 
-    def add_movie(self, table_name: str, title: str, director: str = None, release_date: str = None, genre: str = None, rating: str = None, watched_date: str = None):
+    def __existing_movie(self, table_name: str, title: str) -> bool:
+        '''
+        Checks if a movie already exists in the database.
+
+        Parameters:
+        :table_name: str | Name of the table to check.
+        :title: str | Title of the movie to check.
+
+        Returns:
+        :exists: bool | True if the movie exists, False otherwise.
+        '''
+        try:
+            # Execute the query to retrieve the movie
+            self.cursor.execute(f"SELECT COUNT(*) FROM {table_name} WHERE title = ?", (title,))
+
+            # Fetch the movie
+            count = self.cursor.fetchone()[0]
+
+            if count > 0:
+                return True
+        except sqlite3.Error as e:
+            print(f"Error retrieving movie: {e}")
+            return False
+
+    def add_movie(self, table_name: str, title: str, director: str = None, release_date: str = None, genre: str = None, rating: float = None, watched_date: str = None):
         '''
         Adds a movie to the database.
 
@@ -68,28 +99,31 @@ class Database:
         :watched_date: str | Date the movie was watched.
         '''
         try:
-            print(f'Adding {title} into the database...')
+            print(f"Adding '{title}' into the database...")
+            
+            if self.__existing_movie(table_name, title):
+                print(f"Movie '{title}' already exists in the database.")
+            else:
+                # Execute the insertion query
+                self.cursor.execute(f"""
+                    INSERT INTO {table_name} (title, director, release_date, genre, rating, watched_date)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (title, director, release_date, genre, rating, watched_date))
 
-            # Execute the insertion query
-            self.cursor.execute(f"""
-                INSERT INTO {table_name} (title, director, release_date, genre, rating, watched_date)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (title, director, release_date, genre, rating, watched_date))
+                # Commit the changes to the database
+                self.conn.commit()
 
-            # Commit the changes to the database
-            self.conn.commit()
-
-            print(f"Movie '{title}' added successfully.")
+                print(f"Movie '{title}' added successfully.")
         except sqlite3.Error as e:
             print(f"Error adding {title} to the database. {e}")
 
-    def get_movies(self):
+    def get_movies(self, table_name: str):
         '''
         Retrieves all movies from the database.
         '''
         try:
             # Execute the query to retrieve all movies
-            self.cursor.execute("SELECT * FROM Movies")
+            self.cursor.execute(f"SELECT * FROM {table_name}")
 
             # Fetch all the movies
             while True:
@@ -97,7 +131,7 @@ class Database:
                 if movie is None:
                     break
 
-                yield movie
+                print(movie)
         except sqlite3.Error as e:
             print(f"Error retrieving movies: {e}")
             return None
@@ -123,7 +157,7 @@ class Database:
             print(f"Error retrieving movie: {e}")
             return None
 
-    def delete_movie(self, title: str = None):
+    def delete_movie(self, table_name:str, title: str = None):
         '''
         Deletes a movie from the database. Beware, this action is irreversible.
 
@@ -134,7 +168,7 @@ class Database:
             print(f"Deleting movie '{title}'...")
 
             # Execute the query to delete the movie
-            self.cursor.execute("DELETE FROM Movies WHERE title = ?", (title,))
+            self.cursor.execute(f"DELETE FROM {table_name} WHERE title = ?", (title,))
 
             # Commit the changes to the database
             self.conn.commit()
